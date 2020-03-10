@@ -81,24 +81,23 @@
 
 #include "utils.h"
 
-void your_histogram_and_prefixsum(const float* const d_logLuminance,
-                                  unsigned int* const d_cdf,
+void your_histogram_and_prefixsum(const float *const d_logLuminance,
+                                  unsigned int *const d_cdf,
                                   float &min_logLum,
                                   float &max_logLum,
                                   const size_t numRows,
                                   const size_t numCols,
-                                  const size_t numBins)
-{
-  //TODO
-  /*Here are the steps you need to implement
-    1) find the minimum and maximum value in the input logLuminance channel
-       store in min_logLum and max_logLum
-    2) subtract them to find the range
-    3) generate a histogram of all the values in the logLuminance channel using
-       the formula: bin = (lum[i] - lumMin) / lumRange * numBins
-    4) Perform an exclusive scan (prefix sum) on the histogram to get
-       the cumulative distribution of luminance values (this should go in the
-       incoming d_cdf pointer which already has been allocated for you)       */
+                                  const size_t numBins) {
+    //TODO
+    /*Here are the steps you need to implement
+      1) find the minimum and maximum value in the input logLuminance channel
+         store in min_logLum and max_logLum
+      2) subtract them to find the range
+      3) generate a histogram of all the values in the logLuminance channel using
+         the formula: bin = (lum[i] - lumMin) / lumRange * numBins
+      4) Perform an exclusive scan (prefix sum) on the histogram to get
+         the cumulative distribution of luminance values (this should go in the
+         incoming d_cdf pointer which already has been allocated for you)       */
 
 
 }
