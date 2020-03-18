@@ -85,6 +85,7 @@
 #include "utils.h"
 #include "timer.h"
 
+#define MAX_THREAD 1024
 
 typedef float(*reduce_function_t)(float, float);
 
@@ -228,17 +229,96 @@ __global__ void histogram_kernel(const float *const d_in,
 
 }
 
-void histogram(unsigned int *const d_hist,
-               const float lumRange,
-               const float lumMin,
-               const float lumMax,
-               const size_t numBins) {
+/*
+ * scan for per block
+ */
+__global__ void blelloch_scan_kernel(unsigned int *const d_cdf,
+                                     unsigned int *const d_tmp_sum,
+                                     const size_t size) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int block_local_id = threadIdx.x;
+    __shared__ extern unsigned int shared_cdf[];
+    // 拷贝到shared mem
+    // TODO 这里对于sum运算 单位元就是0 可能有其他运算如min max等需要其他单位元
+    shared_cdf[block_local_id] = tid < size ? d_cdf[tid] : 0;
+
+    // TODO 保证blockDim是2的整数次方
+    // 首先自顶向下做inplace的reduce
+    for (size_t stride = 2; stride <= blockDim.x; stride <<= 1) {
+        __syncthreads();
+        // 如果当前tid为负责计算的tid 则d[block_local_id]=d[block_local_id] op d[block_local_id-stride/2]
+        if (block_local_id % stride == stride - 1) {
+//            d_cdf[block_local_id] = d_cdf[block_local_id] + d_cdf[block_local_id - (stride >> 1)];
+            shared_cdf[block_local_id] = shared_cdf[block_local_id] + shared_cdf[block_local_id - (stride >> 1)];
+        }
+    }
+    // 最后一个数字置0
+    if (block_local_id == blockDim.x - 1) {
+        shared_cdf[block_local_id] = 0;
+    }
+    __syncthreads();
+
+    // downswap
+    for (size_t stride = blockDim.x; stride > 1; stride >>= 1) {
+        if (block_local_id % stride == stride - 1) {
+            unsigned int _copy = shared_cdf[block_local_id];
+            shared_cdf[block_local_id] = shared_cdf[block_local_id] + shared_cdf[block_local_id - (stride >> 1)];
+            shared_cdf[block_local_id - (stride >> 1)] = _copy;
+        }
+        __syncthreads();
+    }
+
+    // 保存当前block的总和 就是结果数组的最后一个元素加上输入的最后一个元素
+    if (d_tmp_sum != NULL && block_local_id == blockDim.x - 1) {
+        d_tmp_sum[blockIdx.x] = d_cdf[tid] + shared_cdf[block_local_id];
+    }
+
+    // 写回global mem
+    if (tid < size) {
+        d_cdf[tid] = shared_cdf[block_local_id];
+    }
 
 }
 
-void integral(unsigned int *const d_hist,
-              unsigned int *const d_cdf) {
+/*
+ * 将各个block中累积和与scan的原始结果相加
+ */
+__global__ void broadcast_add_kernel(unsigned int *const d_cdf,
+                                     unsigned int *const d_tmp_sum,
+                                     const size_t raw_block_dim,
+                                     const size_t size) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= size) {
+        return;
+    }
+    // 把对应块的sum加到原始数据
+    d_cdf[tid] += d_tmp_sum[tid / raw_block_dim];
+}
 
+void integral(unsigned int *const d_hist,
+              unsigned int *const d_cdf,
+              size_t size) {
+
+    int NUM_THREAD = 1024, NUM_BLOCK = size / NUM_THREAD + int(size % NUM_THREAD > 0);
+    unsigned int *d_tmp_sum;
+    checkCudaErrors(cudaMalloc(&d_tmp_sum, NUM_BLOCK * sizeof(unsigned int)));
+
+    // 这里保证所有block得到的原始结果的累积和数量小于MAX_THREAD 这样只要再对累积和原始数组进行一次scan(大小为一个block)就能得到原始数组
+    assert(size < NUM_THREAD * MAX_THREAD);
+
+    // 首先对每个block计算scan结果 并原地存储
+    blelloch_scan_kernel << < NUM_BLOCK, NUM_THREAD, NUM_THREAD * sizeof(unsigned int) >> > (d_hist, d_tmp_sum, size);
+
+    // 计算每个block的sum的cumsum 这里假定第一步得到的sum数量小于MAX_THREAD 这样在一个block内可以处理完成
+    blelloch_scan_kernel << < 1, MAX_THREAD, MAX_THREAD * sizeof(unsigned int) >> > (d_tmp_sum, NULL, NUM_BLOCK);
+
+    // 将累积和加到原始结果上
+    broadcast_add_kernel << < NUM_BLOCK, NUM_THREAD >> > (d_hist, d_tmp_sum, NUM_THREAD, size);
+
+    // 复制结果到输出
+    checkCudaErrors(cudaMemcpy(d_cdf, d_hist, size * sizeof(unsigned int), cudaMemcpyDeviceToDevice));
+
+    cudaFree(d_tmp_sum);
 }
 
 void your_histogram_and_prefixsum(const float *const d_logLuminance,
@@ -260,54 +340,95 @@ void your_histogram_and_prefixsum(const float *const d_logLuminance,
          incoming d_cdf pointer which already has been allocated for you)       */
 
 
-    // TEST
-    const int SIZE = numRows * numCols;
-    const int NUM_THREAD = 1024, NUM_BLOCK = SIZE / NUM_THREAD + int(SIZE % NUM_THREAD > 0);
-    float h_in[SIZE], h_out[NUM_BLOCK];
-    unsigned int h_hist[numBins];
-    for (int i = 0; i < SIZE; ++i) {
-        h_in[i] = i * 2;
-    }
+//    // TEST
+//    const int SIZE = 100;
+//    const int NUM_THREAD = 16, NUM_BLOCK = SIZE / NUM_THREAD + int(SIZE % NUM_THREAD > 0);
+//    unsigned int h_in[SIZE], h_out[NUM_BLOCK], h_tmp_sum[NUM_BLOCK];
+//    unsigned int h_hist[numBins];
+//    for (int i = 0; i < SIZE; ++i) {
+//        h_in[i] = i + 1;
+//    }
+//
+//    unsigned int *d_hist;
+//    checkCudaErrors(cudaMalloc(&d_hist, numBins * sizeof(unsigned int)));
+    //    unsigned int *d_in, *d_out;
+//    unsigned int *d_tmp_sum;
+//    checkCudaErrors(cudaMalloc(&d_in, SIZE * sizeof(unsigned int)));
+//    checkCudaErrors(cudaMalloc(&d_tmp_sum, NUM_BLOCK * sizeof(unsigned int)));
+//    checkCudaErrors(cudaMalloc(&d_out, NUM_BLOCK * sizeof(unsigned int)));
+//    checkCudaErrors(cudaMemcpy(d_in, h_in, SIZE * sizeof(unsigned int), cudaMemcpyHostToDevice));
+//
+//    GpuTimer timer;
+//    timer.Start();
+//
+//    integral(d_in, d_in, SIZE);
+//    checkCudaErrors(cudaDeviceSynchronize());
+//    checkCudaErrors(cudaMemcpy(h_in, d_in, SIZE * sizeof(unsigned int), cudaMemcpyDeviceToHost));
+//
+//    timer.Stop();
+//    printf("\nERR: %d\n", cudaGetLastError());
+//    printf("Your code ran in: %f msecs.\n", timer.Elapsed());
+//    for (int i = 0; i < SIZE; ++i) {
+//        if (i % 20 == 0) {
+//            printf("\n");
+//        }
+//        printf("%d, ", h_in[i]);
+//    }
+//    printf("\n\n");
+//
+//    checkCudaErrors(cudaMemcpy(h_hist, d_hist, numBins * sizeof(unsigned int), cudaMemcpyDeviceToHost));
+//    for (int i = 0; i < numBins; ++i) {
+//        if (i % 20 == 0) {
+//            printf("\n");
+//        }
+//        printf("%d, ", h_hist[i]);
+//    }
+//
+//    cudaFree(d_in);
+//    cudaFree(d_out);
+//    cudaFree(d_hist);
+//
+//    GpuTimer timer;
+//    timer.Start();
 
-    float *d_in, *d_out;
+    const int size = numRows * numCols;
     unsigned int *d_hist;
-    checkCudaErrors(cudaMalloc(&d_in, SIZE * sizeof(float)));
-    checkCudaErrors(cudaMalloc(&d_out, NUM_BLOCK * sizeof(float)));
     checkCudaErrors(cudaMalloc(&d_hist, numBins * sizeof(unsigned int)));
-    checkCudaErrors(cudaMemcpy(d_in, h_in, SIZE * sizeof(float), cudaMemcpyHostToDevice));
-
-    GpuTimer timer;
-    timer.Start();
 
     // 1. 找到最大最小值
-    float3 val = find_min_max(d_logLuminance, numRows * numCols);
+    float3 val = find_min_max(d_logLuminance, size);
+    min_logLum = val.x;
+    max_logLum = val.y;
     checkCudaErrors(cudaDeviceSynchronize());
     printf("size:%ld, %f, %f, %f", numRows * numCols, val.x, val.y, val.z);
     printf("\n\n");
 
     // 2. 求统计直方图
-    // TODO 为了支持任意大小的numBins, 需要将kernel改成N次循环处理，每次tid跳过N个block，参考CUDA Book的P102
+    // TODO 为了支持任意大小的numBins, 需要将kernel改成N次循环处理，每次tid跳过N个block，
+    // TODO 把N个block对应的统计结果汇总到同一个直方图中，参考CUDA Book的P102
+    const int NUM_THREAD = 1024, NUM_BLOCK = size / NUM_THREAD + int(size % NUM_THREAD > 0);
     assert(numBins <= NUM_THREAD);
     histogram_kernel << < NUM_BLOCK, NUM_THREAD, numBins * sizeof(unsigned int) >> > (
-            d_logLuminance, d_hist, val.z, val.x, val.y, numBins, numRows * numCols);
+            d_logLuminance, d_hist, val.z, min_logLum, max_logLum, numBins, numRows * numCols);
     checkCudaErrors(cudaDeviceSynchronize());
-    checkCudaErrors(cudaMemcpy(h_hist, d_hist, numBins * sizeof(unsigned int), cudaMemcpyDeviceToHost));
 
-    for (int i = 0; i < numBins; ++i) {
-        if (i % 20 == 0) {
-            printf("\n");
-        }
-        printf("%d, ", h_hist[i]);
-    }
+    // 3. 对直方图进行scan， 求cumsum
+    integral(d_hist, d_cdf, numBins);
+    checkCudaErrors(cudaDeviceSynchronize());
+//
+//    timer.Stop();
+//    unsigned int h_hist[numBins];
+//    checkCudaErrors(cudaMemcpy(h_hist, d_cdf, numBins * sizeof(unsigned int), cudaMemcpyDeviceToHost));
+//    for (int i = 0; i < numBins; ++i) {
+//        if (i % 20 == 0) {
+//            printf("\n");
+//        }
+//        printf("%d, ", h_hist[i]);
+//    }
+//
+//    printf("\nERR: %d\n", cudaGetLastError());
+//    printf("Your code ran in: %f msecs.\n", timer.Elapsed());
 
-    timer.Stop();
-
-    printf("\nERR: %d\n", cudaGetLastError());
-    printf("Your code ran in: %f msecs.\n", timer.Elapsed());
-
-
-    cudaFree(d_in);
-    cudaFree(d_out);
     cudaFree(d_hist);
 
 }
