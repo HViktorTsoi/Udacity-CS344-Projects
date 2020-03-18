@@ -143,10 +143,11 @@ void gaussian_blur(const unsigned char *const inputChannel,
     int w = filterWidth / 2;
     float out = 0;
     for (int row = absolute_image_position_y - w; row <= absolute_image_position_y + w; ++row) {
+        // clamp to image boundary, but NOT just throw is away
+        int clamp_row = __d_min(__d_max(row, 0), numRows - 1);
         for (int col = absolute_image_position_x - w; col <= absolute_image_position_x + w; ++col) {
 
             // clamp to image boundary, but NOT just throw is away
-            int clamp_row = __d_min(__d_max(row, 0), numRows - 1);
             int clamp_col = __d_min(__d_max(col, 0), numCols - 1);
 
             // calc conv
