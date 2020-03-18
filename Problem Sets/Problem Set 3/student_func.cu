@@ -339,58 +339,6 @@ void your_histogram_and_prefixsum(const float *const d_logLuminance,
          the cumulative distribution of luminance values (this should go in the
          incoming d_cdf pointer which already has been allocated for you)       */
 
-
-//    // TEST
-//    const int SIZE = 100;
-//    const int NUM_THREAD = 16, NUM_BLOCK = SIZE / NUM_THREAD + int(SIZE % NUM_THREAD > 0);
-//    unsigned int h_in[SIZE], h_out[NUM_BLOCK], h_tmp_sum[NUM_BLOCK];
-//    unsigned int h_hist[numBins];
-//    for (int i = 0; i < SIZE; ++i) {
-//        h_in[i] = i + 1;
-//    }
-//
-//    unsigned int *d_hist;
-//    checkCudaErrors(cudaMalloc(&d_hist, numBins * sizeof(unsigned int)));
-    //    unsigned int *d_in, *d_out;
-//    unsigned int *d_tmp_sum;
-//    checkCudaErrors(cudaMalloc(&d_in, SIZE * sizeof(unsigned int)));
-//    checkCudaErrors(cudaMalloc(&d_tmp_sum, NUM_BLOCK * sizeof(unsigned int)));
-//    checkCudaErrors(cudaMalloc(&d_out, NUM_BLOCK * sizeof(unsigned int)));
-//    checkCudaErrors(cudaMemcpy(d_in, h_in, SIZE * sizeof(unsigned int), cudaMemcpyHostToDevice));
-//
-//    GpuTimer timer;
-//    timer.Start();
-//
-//    integral(d_in, d_in, SIZE);
-//    checkCudaErrors(cudaDeviceSynchronize());
-//    checkCudaErrors(cudaMemcpy(h_in, d_in, SIZE * sizeof(unsigned int), cudaMemcpyDeviceToHost));
-//
-//    timer.Stop();
-//    printf("\nERR: %d\n", cudaGetLastError());
-//    printf("Your code ran in: %f msecs.\n", timer.Elapsed());
-//    for (int i = 0; i < SIZE; ++i) {
-//        if (i % 20 == 0) {
-//            printf("\n");
-//        }
-//        printf("%d, ", h_in[i]);
-//    }
-//    printf("\n\n");
-//
-//    checkCudaErrors(cudaMemcpy(h_hist, d_hist, numBins * sizeof(unsigned int), cudaMemcpyDeviceToHost));
-//    for (int i = 0; i < numBins; ++i) {
-//        if (i % 20 == 0) {
-//            printf("\n");
-//        }
-//        printf("%d, ", h_hist[i]);
-//    }
-//
-//    cudaFree(d_in);
-//    cudaFree(d_out);
-//    cudaFree(d_hist);
-//
-//    GpuTimer timer;
-//    timer.Start();
-
     const int size = numRows * numCols;
     unsigned int *d_hist;
     checkCudaErrors(cudaMalloc(&d_hist, numBins * sizeof(unsigned int)));
@@ -415,19 +363,6 @@ void your_histogram_and_prefixsum(const float *const d_logLuminance,
     // 3. 对直方图进行scan， 求cumsum
     integral(d_hist, d_cdf, numBins);
     checkCudaErrors(cudaDeviceSynchronize());
-//
-//    timer.Stop();
-//    unsigned int h_hist[numBins];
-//    checkCudaErrors(cudaMemcpy(h_hist, d_cdf, numBins * sizeof(unsigned int), cudaMemcpyDeviceToHost));
-//    for (int i = 0; i < numBins; ++i) {
-//        if (i % 20 == 0) {
-//            printf("\n");
-//        }
-//        printf("%d, ", h_hist[i]);
-//    }
-//
-//    printf("\nERR: %d\n", cudaGetLastError());
-//    printf("Your code ran in: %f msecs.\n", timer.Elapsed());
 
     cudaFree(d_hist);
 
