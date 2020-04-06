@@ -22,7 +22,12 @@ void check(T err, const char* const func, const char* const file, const int line
 
 template<typename T>
 void checkResultsExact(const T* const ref, const T* const gpu, size_t numElem) {
-  //check that the GPU result matches the CPU result
+//    for(int i=0;i<numElem;++i){
+//        printf("%d %d\n",ref[i],gpu[i]);
+//    }
+
+
+    //check that the GPU result matches the CPU result
   for (size_t i = 0; i < numElem; ++i) {
     if (ref[i] != gpu[i]) {
       std::cerr << "Difference at pos " << i << std::endl;

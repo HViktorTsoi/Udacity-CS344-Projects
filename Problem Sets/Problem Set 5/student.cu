@@ -24,13 +24,13 @@
 
 */
 
-
 #include <device_launch_parameters.h>
 #include <iostream>
 #include <cstdio>
 #include "utils.h"
 
 const unsigned S = 32;
+texture<unsigned, 1, cudaReadModeElementType> texture_val;
 /*
  * 最简单版本的histo
  * 3ms左右
@@ -117,7 +117,8 @@ void histo_shared_tiling(const unsigned int *const vals, //INPUT
 
 /*
  * 使用shared mem tiling的histo 并且每个线程处理多个bytes的数据(而不是每个线程负责一个数据)
- * 0.2ms左右
+ * 0.2ms左右 开启release之后降到0.076s
+ * 使用texture memory之后效果不好 这可能是因为本身也只读取了一次内存
  */
 __global__
 void histo_shared_tiling_multibytes(const unsigned int *const vals, //INPUT
@@ -135,7 +136,10 @@ void histo_shared_tiling_multibytes(const unsigned int *const vals, //INPUT
 
     for (int tid = blockIdx.x * (blockDim.x * S) + threadIdx.x, i = 0;
          i < S && tid < numElems; ++i, tid += blockDim.x) {
+        // global memory
         atomicAdd(&(shared_hist[vals[tid]]), 1);
+        // texture memory
+//        atomicAdd(&(shared_hist[tex1Dfetch(texture_val, tid)]), 1);
     }
     __syncthreads();
 
@@ -158,6 +162,12 @@ void computeHistogram(const unsigned int *const d_vals, //INPUT
 //    histo_shared << < NUM_BLOCK, NUM_THREAD, numBins * sizeof(unsigned) >> > (d_vals, d_histo, numBins, numElems);
 //    histo_shared_tiling << < NUM_BLOCK, NUM_THREAD, numBins * sizeof(unsigned) >> >
 //                                                    (d_vals, d_histo, numBins, numElems, numBins / NUM_THREAD + 1);
+//    const int NUM_THREAD = 1024, NUM_BLOCK = numElems / NUM_THREAD / S + 1;
+//    histo_shared_tiling_multibytes << < NUM_BLOCK, NUM_THREAD, numBins * sizeof(unsigned) >> >
+//                                                               (d_vals, d_histo, numBins, numElems,
+//                                                                       numBins / NUM_THREAD + 1);
+    // texture memory
+    cudaBindTexture(0, texture_val, d_vals, sizeof(unsigned) * numElems);
     const int NUM_THREAD = 1024, NUM_BLOCK = numElems / NUM_THREAD / S + 1;
     histo_shared_tiling_multibytes << < NUM_BLOCK, NUM_THREAD, numBins * sizeof(unsigned) >> >
                                                                (d_vals, d_histo, numBins, numElems,
@@ -165,4 +175,5 @@ void computeHistogram(const unsigned int *const d_vals, //INPUT
     cudaDeviceSynchronize();
 //    std::cout << "ERR: " << cudaGetLastError() << std::endl;
     checkCudaErrors(cudaGetLastError());
+    cudaUnbindTexture(texture_val);
 }
