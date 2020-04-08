@@ -67,47 +67,47 @@
 #include "utils.h"
 #include <thrust/host_vector.h>
 
-void your_blend(const uchar4* const h_sourceImg,  //IN
+void your_blend(const uchar4 *const h_sourceImg,  //IN
                 const size_t numRowsSource, const size_t numColsSource,
-                const uchar4* const h_destImg, //IN
-                uchar4* const h_blendedImg) //OUT
+                const uchar4 *const h_destImg, //IN
+                uchar4 *const h_blendedImg) //OUT
 {
 
-  /* To Recap here are the steps you need to implement
-  
-     1) Compute a mask of the pixels from the source image to be copied
-        The pixels that shouldn't be copied are completely white, they
-        have R=255, G=255, B=255.  Any other pixels SHOULD be copied.
+    /* To Recap here are the steps you need to implement
 
-     2) Compute the interior and border regions of the mask.  An interior
-        pixel has all 4 neighbors also inside the mask.  A border pixel is
-        in the mask itself, but has at least one neighbor that isn't.
+       1) Compute a mask of the pixels from the source image to be copied
+          The pixels that shouldn't be copied are completely white, they
+          have R=255, G=255, B=255.  Any other pixels SHOULD be copied.
 
-     3) Separate out the incoming image into three separate channels
+       2) Compute the interior and border regions of the mask.  An interior
+          pixel has all 4 neighbors also inside the mask.  A border pixel is
+          in the mask itself, but has at least one neighbor that isn't.
 
-     4) Create two float(!) buffers for each color channel that will
-        act as our guesses.  Initialize them to the respective color
-        channel of the source image since that will act as our intial guess.
+       3) Separate out the incoming image into three separate channels
 
-     5) For each color channel perform the Jacobi iteration described 
-        above 800 times.
+       4) Create two float(!) buffers for each color channel that will
+          act as our guesses.  Initialize them to the respective color
+          channel of the source image since that will act as our intial guess.
 
-     6) Create the output image by replacing all the interior pixels
-        in the destination image with the result of the Jacobi iterations.
-        Just cast the floating point values to unsigned chars since we have
-        already made sure to clamp them to the correct range.
+       5) For each color channel perform the Jacobi iteration described
+          above 800 times.
 
-      Since this is final assignment we provide little boilerplate code to
-      help you.  Notice that all the input/output pointers are HOST pointers.
+       6) Create the output image by replacing all the interior pixels
+          in the destination image with the result of the Jacobi iterations.
+          Just cast the floating point values to unsigned chars since we have
+          already made sure to clamp them to the correct range.
 
-      You will have to allocate all of your own GPU memory and perform your own
-      memcopies to get data in and out of the GPU memory.
+        Since this is final assignment we provide little boilerplate code to
+        help you.  Notice that all the input/output pointers are HOST pointers.
 
-      Remember to wrap all of your calls with checkCudaErrors() to catch any
-      thing that might go wrong.  After each kernel call do:
+        You will have to allocate all of your own GPU memory and perform your own
+        memcopies to get data in and out of the GPU memory.
 
-      cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());
+        Remember to wrap all of your calls with checkCudaErrors() to catch any
+        thing that might go wrong.  After each kernel call do:
 
-      to catch any errors that happened while executing the kernel.
-  */
+        cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());
+
+        to catch any errors that happened while executing the kernel.
+    */
 }
