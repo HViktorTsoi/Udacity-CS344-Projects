@@ -217,11 +217,11 @@ __global__ void solve_one_iteration(unsigned char const *const d_interior,// In
 }
 
 
-//__global__ void debug_output(unsigned char const *input,
-__global__ void debug_output(float const *input,
-                             const size_t size,
-                             uchar4 *const d_blendedImg,
-                             const int ch_id = 0) {
+//__global__ void output(unsigned char const *input,
+__global__ void output(float const *input,
+                       const size_t size,
+                       uchar4 *const d_blendedImg,
+                       const int ch_id = 0) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid >= size) {
         return;
@@ -316,7 +316,7 @@ void your_blend(const uchar4 *const h_sourceImg,  //IN
 
     int NUM_THREAD_1D = 1024, NUM_BLOCKS_1D = size / NUM_THREAD_1D + 1, NUM_THREAD_2D = 32;
     int NUM_BLOCKS_X = numColsSource / NUM_THREAD_2D + 1, NUM_BLOCKS_Y = numRowsSource / NUM_THREAD_2D + 1;
-    int NUM_ITERATION = 10000;
+    int NUM_ITERATION = 800;
 
     // 1. 分割通道
     checkCudaErrors(cudaMemcpy(d_sourceImg, h_sourceImg, size * sizeof(uchar4), cudaMemcpyHostToDevice));
@@ -367,15 +367,15 @@ void your_blend(const uchar4 *const h_sourceImg,  //IN
             d_buffer_next = tmp;
         }
 
-        // debug output
-        debug_output << < NUM_BLOCKS_1D, NUM_THREAD_1D >> > (d_buffer_next, size, d_blendedImg, ch_id);
+        // output
+        output << < NUM_BLOCKS_1D, NUM_THREAD_1D >> > (d_buffer_next, size, d_blendedImg, ch_id);
         checkCudaErrors(cudaDeviceSynchronize());
     }
 
 
 
     // debug output
-//    debug_output << < NUM_BLOCKS_1D, NUM_THREAD_1D >> > (d_interior, size, d_blendedImg);
+//    output << < NUM_BLOCKS_1D, NUM_THREAD_1D >> > (d_interior, size, d_blendedImg);
 ////    debug_output << < NUM_BLOCKS_1D, NUM_THREAD_1D >> > (d_mask, size, d_blendedImg);
 //    checkCudaErrors(cudaDeviceSynchronize());
 
