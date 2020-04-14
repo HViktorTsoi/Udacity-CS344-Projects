@@ -1,11 +1,14 @@
-#include <stdio.h>
-#include <stdlib.h>
 #include <cuda_runtime.h>
+#include <device_launch_parameters.h>
+#include <opencv2/flann/random.h>
 #include "compare.h"
 #include "gputimer.h"
 
+const int ARRAY_SIZE = 4096 * 100;
+const int BLOCK_SIZE = 256;
+
 // Reference
-__global__ void smooth(float * v_new, const float * v) {
+__global__ void smooth(float *v_new, const float *v) {
     int myIdx = threadIdx.x * gridDim.x + blockIdx.x;
     int numThreads = blockDim.x * gridDim.x;
     int myLeftIdx = (myIdx == 0) ? 0 : myIdx - 1;
@@ -17,17 +20,32 @@ __global__ void smooth(float * v_new, const float * v) {
 }
 
 // Your code
-__global__ void smooth_shared(float * v_new, const float * v) {
+__global__ void smooth_shared(float *v_new, const float *v) {
     extern __shared__ float s[];
     // TODO: Fill in the rest of this function
-    return v[0];
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int local_tid = threadIdx.x;
+
+    // copy数据到shared mem中，并处理边界
+    s[1 + local_tid] = v[tid];
+    if (local_tid == 0) {
+        s[0] = tid > 0 ? v[tid - 1] : v[tid];
+    }
+    if (local_tid == blockDim.x - 1) {
+//        printf("%d %d %f\n", tid, local_tid, v[tid + 1]);
+
+        // ********** 注意 这里是1 + local_tid + 1，其中1+local_tid是正常的最后一个数据的位置，再+1之后是halo的位置
+        s[1 + local_tid + 1] = tid < ARRAY_SIZE - 1 ? v[tid + 1] : v[tid];
+    }
+    __syncthreads();
+
+    // 计算
+    local_tid += 1;
+    v_new[tid] = 0.25f * s[local_tid - 1] + 0.5f * s[local_tid] + 0.25f * s[local_tid + 1];
 }
 
-int main(int argc, char **argv)
-{
+void smooth_wrapper() {
 
-    const int ARRAY_SIZE = 4096;
-    const int BLOCK_SIZE = 256;
     const int ARRAY_BYTES = ARRAY_SIZE * sizeof(float);
 
     // generate the input array on the host
@@ -35,18 +53,18 @@ int main(int argc, char **argv)
     float h_cmp[ARRAY_SIZE];
     float h_out[ARRAY_SIZE];
     float h_out_shared[ARRAY_SIZE];
-    for(int i = 0; i < ARRAY_SIZE; i++) {
+    for (int i = 0; i < ARRAY_SIZE; i++) {
         // generate random float in [0, 1]
-        h_in[i] = (float)random()/(float)RAND_MAX;
+        h_in[i] = (float) random() / (float) RAND_MAX;
     }
-    for(int i = 0; i < ARRAY_SIZE; i++) {
-        h_cmp[i] = (0.25f * h_in[(i == 0) ? 0 : i-1] +
+    for (int i = 0; i < ARRAY_SIZE; i++) {
+        h_cmp[i] = (0.25f * h_in[(i == 0) ? 0 : i - 1] +
                     0.50f * h_in[i] +
-                    0.25f * h_in[(i == (ARRAY_SIZE - 1)) ? ARRAY_SIZE - 1 : i+1]);
+                    0.25f * h_in[(i == (ARRAY_SIZE - 1)) ? ARRAY_SIZE - 1 : i + 1]);
     }
 
     // declare GPU memory pointers
-    float * d_in, * d_out, * d_out_shared;
+    float *d_in, *d_out, *d_out_shared;
 
     // allocate GPU memory
     cudaMalloc((void **) &d_in, ARRAY_BYTES);
@@ -54,22 +72,23 @@ int main(int argc, char **argv)
     cudaMalloc((void **) &d_out_shared, ARRAY_BYTES);
 
     // transfer the input array to the GPU
-    cudaMemcpy(d_in, h_in, ARRAY_BYTES, cudaMemcpyHostToDevice); 
+    cudaMemcpy(d_in, h_in, ARRAY_BYTES, cudaMemcpyHostToDevice);
 
     // cudaEvent_t start, stop;
     // cudaEventCreate(&start);
     // cudaEventCreate(&stop);
     // launch the kernel
-    smooth<<<ARRAY_SIZE / BLOCK_SIZE, BLOCK_SIZE>>>(d_out, d_in);
+    smooth << < ARRAY_SIZE / BLOCK_SIZE, BLOCK_SIZE >> > (d_out, d_in);
     GpuTimer timer;
     timer.Start();
-    smooth_shared<<<ARRAY_SIZE / BLOCK_SIZE, BLOCK_SIZE, (BLOCK_SIZE + 2) * sizeof(float)>>>(d_out_shared, d_in);
+    smooth_shared << < ARRAY_SIZE / BLOCK_SIZE, BLOCK_SIZE, (BLOCK_SIZE + 2) * sizeof(float) >> > (d_out_shared, d_in);
+//    smooth << < ARRAY_SIZE / BLOCK_SIZE, BLOCK_SIZE, (BLOCK_SIZE + 2) * sizeof(float) >> > (d_out_shared, d_in);
     timer.Stop();
 
     printf("Your code executed in %g ms\n", timer.Elapsed());
     // cudaEventSynchronize(stop);
     // float elapsedTime;
-    // cudaEventElapsedTime(&elapsedTime, start, stop);    
+    // cudaEventElapsedTime(&elapsedTime, start, stop);
 
     // copy back the result from GPU
     cudaMemcpy(h_out, d_out, ARRAY_BYTES, cudaMemcpyDeviceToHost);
@@ -82,6 +101,5 @@ int main(int argc, char **argv)
     cudaFree(d_in);
     cudaFree(d_out);
     cudaFree(d_out_shared);
-        
-    return 0;
+
 }

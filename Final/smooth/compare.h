@@ -1,3 +1,4 @@
+#include <cstdio>
 int compare(float* h_in, float* h_out, float* h_out_shared, float* h_cmp, int ARRAY_SIZE){
     int failure = 0;
     for(int i = 0; i < ARRAY_SIZE; i++) {
