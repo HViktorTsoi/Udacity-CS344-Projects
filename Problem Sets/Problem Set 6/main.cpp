@@ -100,10 +100,13 @@ int main(int argc, char **argv) {
   //check results and output the tone-mapped image
   postProcess(h_blendedImg, numRowsSource, numColsSource, output_file);
 
+  timer.Start();
   // calculate the reference image
   uchar4* h_reference = new uchar4[numRowsSource*numColsSource];
   reference_calc(h_sourceImg, numRowsSource, numColsSource,
                    h_destImg, h_reference);
+  timer.Stop();
+  printf("CPU Time: %f msecs.\n", timer.Elapsed());
 
   // save the reference image
   postProcess(h_reference, numRowsSource, numColsSource, reference_file);
